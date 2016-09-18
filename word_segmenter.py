@@ -27,7 +27,7 @@ class WordSegmenter(object):
         self.iterator = Word2VecIterator(corpus, n_neg, batch_size, window,
                                          min_count, self.word2vec_model)
 
-    def build(self, merge_mode, attention='mean', learn_context_weights=True):
+    def build(self, learn_context_weights=True):
         content_forward = Input(shape=(None,), dtype='int32',
                                 name='content_forward')
         content_backward = Input(shape=(None,), dtype='int32',
@@ -58,6 +58,7 @@ class WordSegmenter(object):
 
         def reverse_tensor(inputs, mask):
             return inputs[:, ::-1, :]
+
         def reverse_tensor_shape(input_shapes):
             return input_shapes
 
@@ -94,7 +95,7 @@ class WordSegmenter(object):
         content_flat = attn([rnn_bidi, attention_2])
 
         output = Activation('sigmoid', name='output')(
-            merge([content_flat, context_flat], mode=merge_mode,
+            merge([content_flat, context_flat], mode='dot',
                   dot_axes=(1, 1)))
 
 
@@ -138,17 +139,14 @@ class WordSegmenter(object):
         if not self.word_vectors:
             self.word_vectors = [self.predict(x)[0][0] for x in self.iterator.word_index]
 
-        if context:
-            vectors = self.model.nodes['context_embedding'].get_weights()[0]
-        else:
-            vectors = self.word_vectors
-
         distances = numpy.array(
-            [cosine(y, vectors[self.iterator.word2index[word]]) for y in vectors])
+            [cosine(y, self.word_vectors[self.iterator.word2index[word]])
+             for y in self.word_vectors])
 
         sorted_args = numpy.argsort(distances)
         if cutoff:
-            sorted_args = [arg for arg in sorted_args if self.iterator.word_count[self.iterator.word_index[y]] >= cutoff]
+            sorted_args = [arg for arg in sorted_args
+                           if self.iterator.word_count[self.iterator.word_index[y]] >= cutoff]
         words = [self.iterator.word_index[y] for y in sorted_args]
 
         return zip(distances[sorted_args][:n], words[:n])
